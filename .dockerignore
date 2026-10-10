@@ -1,0 +1,9 @@
+.git/
+.gitignore
+README.md
+.env
+.env.example
+docker-compose.yml
+scripts/sync-game.sh
+game/
+*.log

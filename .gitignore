@@ -1,0 +1,5 @@
+# build context, но не коммитим (11+ ГБ). Наполняется scripts/sync-game.sh
+game/
+.env
+/logs/
+.DS_Store

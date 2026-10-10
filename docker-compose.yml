@@ -1,0 +1,63 @@
+services:
+  mongo:
+    image: mongo:2.6
+    container_name: starconflict-mongo
+    command: ["mongod", "--bind_ip", "0.0.0.0", "--smallfiles"]
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "127.0.0.1:27017:27017"
+    restart: unless-stopped
+
+  sc-server:
+    build: .
+    platform: linux/amd64
+    container_name: starconflict-server
+    cap_add:
+      - NET_ADMIN
+    env_file: .env
+    environment:
+      SERVER_HOST: ${SERVER_HOST:-127.0.0.1}
+      SERVER_PORT: ${SERVER_PORT:-3850}
+      MONGO_HOST: mongo
+      MONGO_PORT: 27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SSH_PASSWD: ${SSH_PASSWD:-hub1234}
+      FAKE_IF_MODE: ${FAKE_IF_MODE:-dummy}
+      FAKE_HOSTS: ${FAKE_HOSTS:-1}
+      PATCH_SECURITY: ${PATCH_SECURITY:-0}
+      WINEDEBUG: ${WINEDEBUG:--all}
+    depends_on:
+      - mongo
+      - redis
+    ports:
+      - "${SERVER_PORT:-3850}:3850/tcp"
+      - "${SERVER_PORT:-3850}:3850/udp"
+      - "3800-3830:3800-3830/tcp"
+      - "3800-3830:3800-3830/udp"
+      - "35000-35099:35000-35099/tcp"
+      - "35000-35099:35000-35099/udp"
+      - "9000-9010:9000-9010/tcp"
+      - "9000-9010:9000-9010/udp"
+      - "127.0.0.1:2222:2222/tcp"
+    volumes:
+      - sc-logs:/logs
+      - ./game:/opt/sc
+    stdin_open: true
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: starconflict-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  sc-logs:
+  redis-data:
