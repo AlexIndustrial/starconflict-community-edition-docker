@@ -96,6 +96,9 @@ else
   echo "[sc] PATCH_SECURITY=0: security-check пропущен"
 fi
 
+echo "[sc] patch ssh-keycheck (if needed)..."
+python3 /opt/entry/patch-ssh-check.py "$CLOUD_DIR"
+
 if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
   echo "[sc] init wine prefix..."
   wineboot --init >/dev/null 2>&1 || true

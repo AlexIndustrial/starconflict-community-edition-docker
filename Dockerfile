@@ -25,6 +25,7 @@ WORKDIR /opt/sc/cloud
 COPY entrypoint.sh /opt/entry/entrypoint.sh
 COPY scripts/patch-addr-assert.py /opt/entry/patch-addr-assert.py
 COPY scripts/patch-security-check.py /opt/entry/patch-security-check.py
+COPY scripts/patch-ssh-check.py /opt/entry/patch-ssh-check.py
 RUN chmod +x /opt/entry/entrypoint.sh
 
 VOLUME ["/logs"]

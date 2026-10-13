@@ -134,21 +134,13 @@ Verified 10.10.2026: a full battle via `server <LAN-IP>:3850` with
 `starting level`, the battle plays to the end, no dumps. In loopback mode
 the guard never fires at all (1:1 behavior).
 
-Fallback path without binary patches (forwarder on the player's side):
+Fallback path without binary patches (DNAT of outgoing loopback traffic on the player's side):
 
 - on the server `SERVER_HOST=127.0.0.1`, plain bridge launch;
 - on the VPS/proxy — DNAT the ranges from the section above to the game
   host's VPN-IP (TCP+UDP) + SNAT/MASQUERADE for the return path;
 - the player enters the VPS white IP on the login screen (Hub is reachable
-  directly), and for battle/chat raises a local forwarder (addresses
-  `127.0.0.1` looped to the VPS):
-
-```bash
-python3 scripts/player-forward.py --target <white-VPS-IP>
-```
-
-(`--tcp`/`--udp` — ranges, sensible defaults; a root-only Linux alternative
-without the script — DNAT of outgoing loopback traffic:
+  directly), and for battle/chat DNATs outgoing loopback traffic (root-only Linux):
 
 ```bash
 iptables -t nat -A OUTPUT -d 127.0.0.1 -p udp -m multiport \
@@ -156,7 +148,7 @@ iptables -t nat -A OUTPUT -d 127.0.0.1 -p udp -m multiport \
     -j DNAT --to-destination <white-VPS-IP>
 ```
 
-and the same for `-p tcp`.) Ports >1024, no admin rights needed. Verified:
+and the same for `-p tcp`.) Verified:
 queue, matchmaking and a full battle work through such a chain.
 
 ## Configuration
@@ -193,7 +185,7 @@ queue, matchmaking and a full battle work through such a chain.
 | `scripts/sync-game.sh` | Copies `cloud/ + data/ (~11 GB) + sys_data/` from Steam into `./game/` |
 | `scripts/patch-addr-assert.py` | One-byte patch of engine `.exe`s (details below), idempotent |
 | `scripts/patch-security-check.py` | Null-call guard in `DedicatedServer.exe` for node ≠ `127.0.0.1` (`PATCH_SECURITY=1`), idempotent |
-| `scripts/player-forward.py` | `127.0.0.1` → VPS forwarder for the no-patch fallback VPN scheme |
+| `scripts/patch-ssh-check.py` | Skips the spurious `RSA_check_key` self-test failure in `Hub.exe` (SSH console on 2222), idempotent |
 | `scripts/prepare-shared.sh` | Equivalent of the developers' `prepare_shared.bat` |
 | `scripts/hub-console.sh` | Hub SSH console login (see status below) |
 | `./game/` | Copy of the game files: mounted into the container, in neither git nor the image |
@@ -222,16 +214,30 @@ Here: `./scripts/prepare-shared.sh` (the same inside the container,
 changes are written straight into the mounted `./game/`). On stock files
 everything is already in sync.
 
-## Server console — experimental
+## Server console
 
 The Hub has a console (`help`, `status`, `enterMaintenanceMode <min>`,
 `leaveMaintenanceMode`, `quit`, ...) and two ways to reach it:
 
 - `docker attach` — **doesn't work**: the Hub writes/reads through the Windows console
   (conhost), not Unix stdin/stdout;
-- SSH to `127.0.0.1:2222` (`scripts/hub-console.sh`) — the server comes up
-  (banner `SSH-2.0-targem.ssh`), but password auth doesn't go through yet.
-  Status: under investigation, PRs welcome.
+- SSH to `127.0.0.1:2222` (`scripts/hub-console.sh`, password `SSH_PASSWD`
+  from `.env`) — works. Notes:
+  - the entrypoint applies `scripts/patch-ssh-check.py` (one NOP skipping
+    the spurious `RSA_check_key` self-test failure in `Hub.exe`, same class
+    of fix as the other runtime patches — without it the Hub logs
+    `failed to load matching RSA host keys` and never listens on 2222);
+  - the Hub's SSH is 2015-era (`diffie-hellman-group1-sha1`, `ssh-rsa`,
+    `aes128-cbc`, `hmac-sha1`) — modern clients need these explicitly
+    enabled, `hub-console.sh` already passes the right `-o` options;
+  - about half of the handshakes fail client-side with
+    `key bits do not match`: the old server sometimes offers a DH key with
+    <512 significant bits, which modern OpenSSH rejects — `hub-console.sh`
+    retries automatically (usually 1–2 attempts are enough);
+  - single command: `scripts/hub-console.sh` drops into the console;
+    non-interactive: `scripts/hub-console.sh "uptime"` (note: not every
+    name from the old docs exists — e.g. `status` returns failure;
+    `help`, `uptime`, `enterMaintenanceMode` are verified).
 
 Stop/restart via compose works as usual.
 
@@ -283,6 +289,12 @@ Stop/restart via compose works as usual.
   memory), the stdcall stack is cleaned, and execution resumes past the
   patched bytes. Patterns are strict (single match), application is
   idempotent.
+- `patch-ssh-check.py`: one `jne` → NOPs after `RSA_check_key` in the SSH
+  host-key loader of `Hub.exe`. Under Wine the self-test fails on a valid
+  pair (`failed to load matching RSA host keys`, no listener on 2222);
+  the pair itself is fine (handshake signatures verify, password auth
+  works), only the check misfires. Found by disassembling, bisected to a
+  single jump, verified end-to-end (`help`/`status` over SSH).
 - The entrypoint prepares the container network: `SERVER_HOST` is put as a
   secondary `/32` on dummy/`eth0` **inside** the container netns (host and VPN
   untouched) and written first for the hostname into `/etc/hosts` — dedics'
